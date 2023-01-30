@@ -2,19 +2,9 @@
 Implements several utility functions for working with pointcloud data
 """
 import numpy as np
-from scipy.linalg import lu
 from numpy.random import Generator, PCG64
-from minterpy.core import MultiIndexSet, Grid
-from minterpy import LagrangePolynomial, NewtonPolynomial
-from minterpy import get_transformation
 
 __all__ = ['points_on_ellipsoid', 'points_on_biconcave_disc', 'points_on_torus']
-
-# , 'interpolate_pointcloud',
-#            'find_polynomial', 'get_gradients', 'get_curvatures', 'output_VTK', 'output_VTR',
-#            'interpolate_pointcloud_CK_sum', 'find_polynomial_CK_sum', 'sample_points_on_poly',
-#            'interpolate_pointcloud_arb', 'find_polynomial_arb']
-
 
 def points_on_ellipsoid(num_points: int, radius_x: float = 1.0, radius_y: float = 1.0,
                         radius_z: float = 1.0, random_seed: int = 42, verbose: bool = False):
@@ -118,96 +108,6 @@ def points_on_torus(num_points: int, param_c: float = 0.5, param_a: float = 0.37
     return pointcloud
 
 
-def interpolate_pointcloud_arb(pointcloud, m, n, lp_degree: float = 2.0, tol=1e-4):
-    """Attempts to interpolate a pointcloud with a polynomial of degree n in dimension m
-
-    """
-
-    N_points = pointcloud.shape[0]
-    # Set up the regressor
-    mi = MultiIndexSet.from_degree(spatial_dimension=m, poly_degree=n, lp_degree=lp_degree)
-    grid = Grid.from_domain(mi, pointcloud)
-    regressor = Regression(grid, verbose=False)
-
-    N = len(mi)
-
-    if N_points < N:
-        return [0, 0, 0, 0, 0]
-
-    # Construct the R matrix
-    regressor.cache_transform(pointcloud)
-    R_matrix = regressor.regression_matrix
-    # Normalizing the R matrix
-    R_matrix /= np.linalg.norm(R_matrix, np.inf, axis=(0,1))
-
-    P, L, U = lu(R_matrix)
-
-    #print(f"Tolerance for rank computation is {np.max(U.shape)*np.spacing(np.linalg.norm(U,2))}")
-    # The tolerance for SVD in rank estimation is different in MATLAB and numpy. The following line makes them same.
-    # np.spacing is equivalent to 'eps' in MATLAB
-    K = np.linalg.matrix_rank(U, np.max(U.shape)*np.spacing(np.linalg.norm(U,2)))
-    u = np.diag(U)
-    v = np.sort(np.abs(u))
-    J = np.argsort(np.abs(u))
-
-    actual_level_dim = N - K
-    # Try forced construction of hypersurface with N-K = 1
-    if actual_level_dim == 0:
-        U[J[0],J[0]] = 0.0
-        R_new = P @ L @ U
-        P, L, U = lu(R_new)
-
-        K = np.linalg.matrix_rank(U, np.max(U.shape)*np.spacing(np.linalg.norm(U,2)))
-        u = np.diag(U)
-        v = np.sort(np.abs(u))
-        J = np.argsort(np.abs(u))
-        K = N - 1
-
-    level_dim = N-K
-
-    BK = np.zeros((N,level_dim))
-    UK = np.identity(N)
-    UK[:,J[N-K:N]] = U[:,J[N-K:N]]
-
-    for i in range(level_dim):
-        b = -U[:,J[i]]
-        BK[:,i] = np.linalg.solve(UK,b)
-        BK[J[i],i] = 1
-
-    # If the surface was force constructed, check if accuracy of fit is good enough in the excluded points
-    if actual_level_dim == 0:
-        max_error = np.max(np.abs(R_matrix @ BK))
-        if max_error > tol:
-            # Insufficient accuracy of fitting, try with a higher degree polynomial
-            return [-1,0,0,0,0]
-
-    # Find maximum error of fitting among all BKs
-    max_error = -1.0
-    error_at_points = np.zeros(N_points)
-    for k in range(level_dim):
-        # Normalize BK vector. This is redundant if the R_matrix is normalized (?).
-        #max_bk = np.max(np.abs(BK[:,k]))
-        #BK[:,k] = BK[:,k] / max_bk
-        bk_lag_poly = LagrangePolynomial.from_poly(regressor._lagrange_poly, new_coeffs=BK[:, k])
-        transformer_l2n = get_transformation(bk_lag_poly, NewtonPolynomial)
-
-        newt_poly = transformer_l2n()
-
-        eval_points = newt_poly(pointcloud)
-        _, val_grads = get_gradients(pointcloud, newt_poly)
-        norm_val_grads = np.linalg.norm(val_grads, axis=1)
-        for p in range(N_points):
-            error_at_points[p] = eval_points[p] / norm_val_grads[p]
-
-        # error_vals = np.abs(newt_poly(pointcloud))
-
-        # num_error_level = np.max(error_vals)
-        # max_error = np.max([max_error, num_error_level])
-    max_error = np.max(error_at_points)
-
-    return [1, regressor, BK, newt_poly, max_error]
-
-
 def output_VTK(pointcloud, frame=0, prefix='pc_', scalar_field=None, vector_field=None):
     """Visualize the pointcloud, the normal vectors, and curvatures evaluted at all points
 
@@ -251,7 +151,7 @@ def output_VTK(pointcloud, frame=0, prefix='pc_', scalar_field=None, vector_fiel
 
 
 def output_VTR(newt_poly, frame=0, prefix='surf_', scalar_field=None, mesh_size=50, bounds=1.00):
-    """Visualize the surface as a rectilinear grid
+    """Visualize the surface as a VTK rectilinear grid
 
     """
     xvals = np.linspace(-bounds,bounds,mesh_size)

@@ -15,8 +15,8 @@ __all__ = ['LevelsetPoly']
 class LevelsetPoly:
     """Constructs a polynomial representation for a levelset function of a surface that passes through a point cloud."""
 
-    def __init__(self, pointcloud: np.ndarray, poly_degree: int = 2, lp_degree: float = 2.0,
-                 method: str = 'BK', tol: float = 1e-4):
+    def __init__(self, pointcloud: np.ndarray, poly_degree: int = None, lp_degree: float = 2.0,
+                 method: str = 'BK', tol: float = 1e-4, verbose = False):
         """ Constructor
 
         Attributes
@@ -34,15 +34,76 @@ class LevelsetPoly:
         self._gradient_poly = None
 
         if method == 'BK':
-            lag_poly, newt_poly = interpolate_bk(pointcloud, poly_degree, lp_degree)
+            if poly_degree is None:
+                poly_degree = 1
+                while True:
+                    poly_degree += 1
+                    lag_poly, newt_poly = interpolate_bk(pointcloud, poly_degree, lp_degree)
+                    eval_points = newt_poly(pointcloud)
+
+                    dx_poly = newt_poly.diff([1, 0, 0])
+                    dy_poly = newt_poly.diff([0, 1, 0])
+                    dz_poly = newt_poly.diff([0, 0, 1])
+
+                    gradient_poly = NewtonPolynomial.from_poly(newt_poly,
+                                                                     new_coeffs=np.c_[dx_poly.coeffs,
+                                                                     dy_poly.coeffs,
+                                                                     dz_poly.coeffs])
+
+                    val_grads = gradient_poly(pointcloud)
+                    norm_val_grads = np.linalg.norm(val_grads, axis=1)
+                    error_at_points = eval_points  / norm_val_grads
+                    max_error = np.max(np.abs(error_at_points))
+                    if verbose:
+                        print(f"Levelset error (method = 'BK'), n = {poly_degree}, lp = {lp_degree} : {max_error}")
+
+                    if np.abs(max_error) < tol:
+                        self._lagrange_poly = lag_poly
+                        self._newton_poly = newt_poly
+                        self._gradient_poly = gradient_poly
+                        break
+            else:
+                lag_poly, newt_poly = interpolate_bk(pointcloud, poly_degree, lp_degree)
+
         elif method == 'LB':
             #LB_sum method
-            lag_poly, newt_poly = interpolate_lb(pointcloud, poly_degree, lp_degree)
+            if poly_degree is None:
+                poly_degree = 1
+                while True:
+                    poly_degree += 1
+                    lag_poly, newt_poly = interpolate_lb(pointcloud, poly_degree, lp_degree)
+                    eval_points = newt_poly(pointcloud)
+
+                    dx_poly = newt_poly.diff([1, 0, 0])
+                    dy_poly = newt_poly.diff([0, 1, 0])
+                    dz_poly = newt_poly.diff([0, 0, 1])
+
+                    gradient_poly = NewtonPolynomial.from_poly(newt_poly,
+                                                                     new_coeffs=np.c_[dx_poly.coeffs,
+                                                                     dy_poly.coeffs,
+                                                                     dz_poly.coeffs])
+
+                    val_grads = gradient_poly(pointcloud)
+                    norm_val_grads = np.linalg.norm(val_grads, axis=1)
+                    error_at_points = (eval_points - 1.0) / norm_val_grads
+                    max_error = np.max(np.abs(error_at_points))
+
+                    if verbose:
+                        print(f"Levelset error (method = 'LB'), n = {poly_degree}, lp = {lp_degree} : {max_error}")
+
+                    if np.abs(max_error) < tol:
+                        self._lagrange_poly = lag_poly
+                        self._newton_poly = newt_poly
+                        self._gradient_poly = gradient_poly
+                        break
+            else:
+                lag_poly, newt_poly = interpolate_lb(pointcloud, poly_degree, lp_degree)
+
+                self._lagrange_poly = lag_poly
+                self._newton_poly = newt_poly
+
         else:
             raise ValueError(f"Unrecognized levelset interpolation method {method}.")
-
-        self._lagrange_poly = lag_poly
-        self._newton_poly = newt_poly
 
 
     def __call__(self, xx):
@@ -184,7 +245,7 @@ class LevelsetPoly:
     #             sampled_points[spos, :] = coord
     #             spos += 1
 
-        return sampled_points
+        # return sampled_points
 
     def output_VTR(self, frame=0, prefix='surf_', mesh_size=50, bounds=1.00):
         # Generate VTR output
@@ -297,15 +358,6 @@ def interpolate_lb(pointcloud, n, lp_degree: float = 2.0, tol=1e-4):
     LB_sum_lag = LagrangePolynomial.from_poly(polynomial=lag_poly_new, new_coeffs=LB_sum)
     l2n_transformer = get_transformation(LB_sum_lag, NewtonPolynomial)
     LB_sum_newton = l2n_transformer(LB_sum_lag)
-    # eval_points = LB_sum_newton(pointcloud)
-
-    # _, val_grads = get_gradients(pointcloud, LB_sum_newton)
-    # norm_val_grads = np.linalg.norm(val_grads, axis=1)
-    # error_at_points = np.zeros(num_points)
-    # for p in range(num_points):
-    #     error_at_points[p] = (eval_points[p] - 1.0) / norm_val_grads[p]
-    #
-    # max_error_dk = np.max(np.abs(error_at_points))
 
 
     return LB_sum_lag, LB_sum_newton
