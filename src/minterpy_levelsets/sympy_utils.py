@@ -1,7 +1,11 @@
-
+"""
+Implements convenient transformation functions between Sympy Polynomial and Minterpy Polynomial types.
+"""
+import numpy as np
 import sympy as sp
 from minterpy.core.utils import _get_poly_degree
-
+from minterpy.core import MultiIndexSet
+from minterpy import CanonicalPolynomial, get_transformation
 
 __all__ = ['sympy_to_mp', 'mp_to_sympy']
 
@@ -59,4 +63,34 @@ def mp_to_sympy(mp_poly):
 
     poly = sp.Poly.from_dict(poly_dict, gen_list)
     return poly
-    ]
+
+
+
+def find_match_positions(larger_idx_set, smaller_idx_set):
+    """this is different from the one in multi_index_utils.
+        doesn't require either of the multi index set to be lex sorted.
+    """
+    nr_exp_smaller, spatial_dimension = smaller_idx_set.shape
+    positions = np.zeros(nr_exp_smaller, dtype=np.int64)
+    for i in range(nr_exp_smaller):
+        idx1 = smaller_idx_set[i, :]
+        search_pos = -1
+        while 1:
+            search_pos += 1
+            idx2 = larger_idx_set[search_pos, :]
+            if is_equal(idx1, idx2):
+                positions[i] = search_pos
+                break
+    return positions
+
+
+def is_equal(index1: np.ndarray, index2: np.ndarray) -> bool:
+    """ tells weather multi-index 1 equal to index2
+    """
+    spatial_dimension = len(index1)
+    for m in range(spatial_dimension - 1, -1, -1):  # from last to first dimension
+        if index1[m] > index2[m]:
+            return False
+        if index1[m] < index2[m]:
+            return False
+    return True  # all equal
