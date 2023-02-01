@@ -8,7 +8,7 @@ from numpy.random import Generator, PCG64
 from minterpy import MultiIndexSet, LagrangePolynomial, NewtonPolynomial
 from minterpy import get_transformation
 from minterpy.extras.regression.ordinary_regression import compute_regression_matrix
-from .pointcloud_utils import output_VTR
+from .pointcloud_utils import output_VTR, sample_points
 
 __all__ = ['LevelsetPoly']
 
@@ -214,38 +214,13 @@ class LevelsetPoly:
 
         return mean_curvature, gauss_curvature
 
-    # def sample_points(self, max_points, bounds=1.0, tol=1e-6, max_iters=10,
-    #                           random_seed=42):
-    #     """ Randomly sample points on the zero isosurface of a polynomial.
-    #     """
-    #     sampled_points = np.zeros((max_points, 3))
-    #     if self._gradient_poly is None:
-    #         deriv = NewtonPolyDerivator(newt_poly)
-    #         grad_poly_newt = deriv.get_gradient_poly()
-    #
-    #     rg = Generator(PCG64(random_seed))
-    #
-    #     spos = 0
-    #     while spos < max_points:
-    #         coord = 2.0 * bounds * rg.random(3) - bounds
-    #         fval = self._newton_poly(coord)
-    #         dim = rg.integers(3)
-    #         iters = 0
-    #         while np.abs(fval) > tol and iters <= max_iters:
-    #             dfval = grad_poly_newt(coord)
-    #             dfxval = dfval[dim]
-    #             xnew = coord[dim] - fval / dfxval
-    #             if np.abs(xnew) >= bounds:
-    #                 break
-    #             coord[dim] = xnew
-    #             fval = self._newton_poly(np.array(coord))
-    #             iters += 1
-    #
-    #         if np.abs(fval) < tol:
-    #             sampled_points[spos, :] = coord
-    #             spos += 1
-
-        # return sampled_points
+    def sample_points(self, max_points, bounds=1.0, tol=1e-6, max_iters=10,
+                              random_seed=42):
+        """ Randomly sample points on the zero isosurface of a polynomial.
+        """
+        return sample_points(self._newton_poly, max_points=max_points, bounds=bounds,
+                             tol=tol, max_iters=max_iters, random_seed=random_seed,
+                             grad_newt_poly=self._gradient_poly)
 
     def output_VTR(self, frame=0, prefix='surf_', mesh_size=50, bounds=1.00):
         # Generate VTR output

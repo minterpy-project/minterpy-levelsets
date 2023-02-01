@@ -3,8 +3,10 @@ Implements several utility functions for working with pointcloud data
 """
 import numpy as np
 from numpy.random import Generator, PCG64
+from minterpy import NewtonPolynomial
 
-__all__ = ['points_on_ellipsoid', 'points_on_biconcave_disc', 'points_on_torus']
+__all__ = ['points_on_ellipsoid', 'points_on_biconcave_disc', 'points_on_torus', 'output_VTK', 'output_VTR',
+           'sample_points']
 
 def points_on_ellipsoid(num_points: int, radius_x: float = 1.0, radius_y: float = 1.0,
                         radius_z: float = 1.0, random_seed: int = 42, verbose: bool = False):
@@ -196,4 +198,40 @@ def output_VTR(newt_poly, frame=0, prefix='surf_', scalar_field=None, mesh_size=
     outf.write("</VTKFile>\n")
     outf.close()
 
+def sample_points(newt_poly, max_points, bounds=1.0, tol=1e-6, max_iters=10,
+                  random_seed=42, grad_newt_poly=None):
+    """ Randomly sample points on the zero isosurface of a given polynomial.
+    """
+    sampled_points = np.zeros((max_points, 3))
+    if grad_newt_poly is None:
+        dx_poly = newt_poly.diff([1, 0, 0])
+        dy_poly = newt_poly.diff([0, 1, 0])
+        dz_poly = newt_poly.diff([0, 0, 1])
 
+        grad_newt_poly = NewtonPolynomial.from_poly(newt_poly,
+                                                         new_coeffs=np.c_[dx_poly.coeffs,
+                                                         dy_poly.coeffs,
+                                                         dz_poly.coeffs])
+
+    rg = Generator(PCG64(random_seed))
+
+    spos = 0
+    while spos < max_points:
+        coord = 2.0 * bounds * rg.random(3) - bounds
+        f = newt_poly(coord)
+        iters = 0
+        while np.abs(f) > tol and iters <= max_iters:
+            dim = np.random.randint(3)
+            df = grad_newt_poly(coord)
+            xnew = coord[dim] - f / df[dim]
+            if np.any(np.abs(xnew) >= bounds):
+                break
+            coord[dim] = xnew
+            f = newt_poly(np.array(coord))
+            iters += 1
+
+        if np.abs(f) < tol:
+            sampled_points[spos, :] = coord
+            spos += 1
+
+    return sampled_points
