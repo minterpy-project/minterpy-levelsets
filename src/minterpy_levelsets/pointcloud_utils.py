@@ -6,7 +6,7 @@ from numpy.random import Generator, PCG64
 from minterpy import NewtonPolynomial
 
 __all__ = ['points_on_ellipsoid', 'points_on_biconcave_disc', 'points_on_torus', 'output_VTK', 'output_VTR',
-           'sample_points']
+           'sample_points', 'closest_points']
 
 def points_on_ellipsoid(num_points: int, radius_x: float = 1.0, radius_y: float = 1.0,
                         radius_z: float = 1.0, random_seed: int = 42, verbose: bool = False):
@@ -221,7 +221,7 @@ def sample_points(newt_poly, max_points, bounds=1.0, tol=1e-6, max_iters=10,
         f = newt_poly(coord)
         iters = 0
         while np.abs(f) > tol and iters <= max_iters:
-            dim = np.random.randint(3)
+            dim = rg.integers(3)
             df = grad_newt_poly(coord)
             xnew = coord[dim] - f / df[dim]
             if np.any(np.abs(xnew) >= bounds):
@@ -235,3 +235,31 @@ def sample_points(newt_poly, max_points, bounds=1.0, tol=1e-6, max_iters=10,
             spos += 1
 
     return sampled_points
+
+def closest_points(newt_poly, grad_newt_poly, x0, tol = 1e-6, max_iter=10):
+    x = x0.copy()
+    phi_x = newt_poly(x)
+    sign = np.sign(phi_x)
+    grad_phi_norm2 = np.sum(grad_newt_poly(x) ** 2, axis=1)
+
+    for p in range(x0.shape[0]):
+        xp = x[p,:]
+        for i in range(max_iter):
+            grad_phi = grad_newt_poly(xp)
+            y = xp - grad_phi * (phi_x[p] / grad_phi_norm2[p])
+            dist = sign[p] * np.linalg.norm(y - x0[p])
+            grad_phi_y = grad_newt_poly(y)
+            dx = -dist * grad_phi_y / np.linalg.norm(grad_phi_y)
+            xp += dx
+            phi_x[p] = newt_poly(xp)
+            grad_phi_norm2[p] = np.sum(grad_phi ** 2)
+            err = np.sqrt(phi_x[p] ** 2 / grad_phi_norm2[p])
+            if err < tol:
+                break
+            # # Update x0 and sign every 2 iterations for faster convergence
+            # if i % 2 == 1:
+            #     x0 = x
+            #     phi_x = phi(x)
+            #     sign = np.sign(phi_x)
+
+    return x

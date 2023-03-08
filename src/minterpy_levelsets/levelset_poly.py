@@ -5,12 +5,12 @@ Base class for levelset polynomials
 import numpy as np
 from scipy.linalg import lu, lstsq
 from numpy.random import Generator, PCG64
-from minterpy import MultiIndexSet, LagrangePolynomial, NewtonPolynomial
+from minterpy import MultiIndexSet, Grid, LagrangePolynomial, NewtonPolynomial
 from minterpy import get_transformation
-from minterpy.extras.regression.ordinary_regression import compute_regression_matrix
-from .pointcloud_utils import output_VTR, sample_points
+from minterpy.extras.regression.ordinary_regression import compute_regression_matrix, OrdinaryRegression
+from .pointcloud_utils import output_VTR, sample_points, closest_points
 
-__all__ = ['LevelsetPoly']
+__all__ = ['LevelsetPoly', 'NBLevelsetPoly']
 
 class LevelsetPoly:
     """Constructs a polynomial representation for a levelset function of a surface that passes through a point cloud."""
@@ -64,6 +64,8 @@ class LevelsetPoly:
                         break
             else:
                 lag_poly, newt_poly = interpolate_bk(pointcloud, poly_degree, lp_degree)
+                self._lagrange_poly = lag_poly
+                self._newton_poly = newt_poly
 
         elif method == 'LB':
             #LB_sum method
@@ -85,7 +87,7 @@ class LevelsetPoly:
 
                     val_grads = gradient_poly(pointcloud)
                     norm_val_grads = np.linalg.norm(val_grads, axis=1)
-                    error_at_points = (eval_points - 1.0) / norm_val_grads
+                    error_at_points = eval_points / norm_val_grads
                     max_error = np.max(np.abs(error_at_points))
 
                     if verbose:
@@ -98,7 +100,6 @@ class LevelsetPoly:
                         break
             else:
                 lag_poly, newt_poly = interpolate_lb(pointcloud, poly_degree, lp_degree)
-
                 self._lagrange_poly = lag_poly
                 self._newton_poly = newt_poly
 
@@ -108,7 +109,7 @@ class LevelsetPoly:
 
     def __call__(self, xx):
         #Evaluation
-        self._newton_poly(xx)
+        return self._newton_poly(xx)
 
     @property
     def lagrange_coeffs(self):
@@ -226,6 +227,58 @@ class LevelsetPoly:
         # Generate VTR output
         output_VTR(self._newton_poly, frame=frame, prefix=prefix, mesh_size=mesh_size, bounds=bounds)
 
+    def closest_point_projection(self, x0, tol=1e-6, max_iters=10):
+        return closest_points(self._newton_poly, self._gradient_poly, x0, tol, max_iters)
+
+class NBLevelsetPoly(LevelsetPoly):
+    """Constructs a polynomial representation for a level set function on a narrowband."""
+
+    def __init__(self, nb_points: np.ndarray, ls_vals: np.ndarray, poly_degree: int = None, lp_degree: float = 2.0,
+                tol: float = 1e-4, verbose = False):
+        """ Constructor
+
+        Attributes
+        ----------
+        nb_points : A numpy array of shape n x m
+        ls_vals : A numpy array of shape n
+        poly_degree : degree of polynomial for fit
+        lp_degree : lp-degree of polynomial
+        tol : tolerance of fit (Note: If specified, poly_degree will be treated as starting degree)
+        """
+
+        self._pointcloud = nb_points
+        self._ls_vals = ls_vals
+        self._lagrange_poly = None
+        self._newton_poly = None
+        self._gradient_poly = None
+
+        if poly_degree is None:
+            poly_degree = 1
+            while True:
+                poly_degree += 1
+                ## Narrowband levelset fit
+                mi = MultiIndexSet.from_degree(3, poly_degree, lp_degree)
+                grid = Grid(mi)
+                regressor = OrdinaryRegression(mi, grid)
+                regressor.fit(nb_points, ls_vals)
+                max_error = regressor.regfit_l2_error
+                if verbose:
+                    print(f"NBLevelset error, n = {poly_degree}, lp = {lp_degree} : {max_error}")
+
+                if np.abs(max_error) < tol:
+                    self._lagrange_poly = regressor.origin_poly
+                    self._newton_poly = regressor.eval_poly
+                    self._gradient_poly = None
+                    break
+        else:
+            mi = MultiIndexSet.from_degree(3, poly_degree, lp_degree)
+            grid = Grid(mi)
+            regressor = OrdinaryRegression(mi, grid)
+            regressor.fit(nb_points, ls_vals)
+            self._lagrange_poly = regressor.origin_poly
+            self._newton_poly = regressor.eval_poly
+
+
 def interpolate_bk(pointcloud, n, lp_degree):
     """Implements the Basis of Kernel (BK) method for finding the polynomial representation."""
 
@@ -329,6 +382,9 @@ def interpolate_lb(pointcloud, n, lp_degree: float = 2.0, tol=1e-4):
     LB_sum = soln[:, 0]
     for i in range(1, num_coeffs - 1):
         LB_sum += soln[:, i]
+
+    # The isocontour with 1.0 should be the zero levelset
+    LB_sum -= 1.0
 
     LB_sum_lag = LagrangePolynomial.from_poly(polynomial=lag_poly_new, new_coeffs=LB_sum)
     l2n_transformer = get_transformation(LB_sum_lag, NewtonPolynomial)
