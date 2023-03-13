@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "minterpy_levelsets"
-version = "0.0.1"
+version = "0.1.0"
 authors = [
   { name="Sachin Krishnan Thekke Veettil", email="sthekke@mpi-cbg.de" },
 ]
@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://gitlab.hzdr.de/interpol/minterpy-levelsets"
-"Bug Tracker" = "https://github.com/pypa/sampleproject/issues"
+"Homepage" = "https://codebase.helmholtz.cloud/interpol/minterpy-levelsets"
+"Bug Tracker" = "https://codebase.helmholtz.cloud/interpol/minterpy-levelsets/-/issues"
 
 [tool.setuptools_scm]
 write_to = "src/minterpy_levelsets/version.py"
