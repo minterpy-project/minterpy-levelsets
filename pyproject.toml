@@ -20,8 +20,8 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://gitlab.hzdr.de/interpol/minterpy-levelsets"
-"Bug Tracker" = "https://github.com/pypa/sampleproject/issues"
+"Homepage" = "https://codebase.helmholtz.cloud/interpol/minterpy-levelsets"
+"Bug Tracker" = "https://codebase.helmholtz.cloud/interpol/minterpy-levelsets/-/issues"
 
 [tool.setuptools_scm]
 write_to = "src/minterpy_levelsets/version.py"
